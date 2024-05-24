@@ -85,7 +85,7 @@ class RecordDetailsPage extends StatelessWidget {
                     ),
                     ElevatedButton(
                       onPressed: () async {
-                        await eliminarRegistro(recordId);
+                        await actualizarEstadoRegistro(recordId, 'rechazado');
                         Navigator.pop(context);
                       },
                       child: const Text("Rechazar"),
@@ -103,6 +103,8 @@ class RecordDetailsPage extends StatelessWidget {
   Future<void> actualizarEstadoRegistro(String recordId, String status) async {
     await FirebaseFirestore.instance.collection('animal_records').doc(recordId).update({'status': status});
   }
+
+
 
   Future<void> eliminarRegistro(String recordId) async {
     await FirebaseFirestore.instance.collection('animal_records').doc(recordId).delete();

@@ -12,11 +12,12 @@ class PublicUserPage extends StatefulWidget {
 
 class _PublicUserPageState extends State<PublicUserPage> {
   final _formKey = GlobalKey<FormState>();
-  late String supplierName, specieAnimal;
-  late String description, dni;
+  String supplierName = '', specieAnimal = '', description = '', dni = '';
   String feedbackMessage = '';
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+
+  final List<String> _animalTypes = ['Bovino', 'Caprino', 'Porcino', 'Otros'];
 
   @override
   Widget build(BuildContext context) {
@@ -37,7 +38,6 @@ class _PublicUserPageState extends State<PublicUserPage> {
               child: Icon(Icons.exit_to_app),
             ),
           ),
-          // Add the button to navigate to MapScreen
           ElevatedButton(
             onPressed: () {
               Navigator.push(
@@ -96,37 +96,75 @@ class _PublicUserPageState extends State<PublicUserPage> {
     );
   }
 
+  Future<List<String>> getSupplierNames() async {
+    QuerySnapshot querySnapshot = await FirebaseFirestore.instance.collection('animal_records').get();
+    List<String> supplierNames = [];
+    for (var doc in querySnapshot.docs) {
+      if (doc['supplierName'] != null) {
+        supplierNames.add(doc['supplierName']);
+      }
+    }
+    return supplierNames;
+  }
+
   Widget buildSupplierNameField() {
-    return TextFormField(
-      decoration: InputDecoration(
-        labelText: "Nombre Proveedor",
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: Colors.black),
-        ),
-      ),
-      onSaved: (String? value) {
-        supplierName = value!;
-      },
-      validator: (String? value) {
-        if (value!.isEmpty) {
-          return "Este campo es obligatorio";
+    return FutureBuilder<List<String>>(
+      future: getSupplierNames(),
+      builder: (context, snapshot) {
+        if (snapshot.hasData) {
+          return Autocomplete<String>(
+            optionsBuilder: (TextEditingValue textEditingValue) {
+              if (textEditingValue.text == '') {
+                return const Iterable<String>.empty();
+              }
+              return snapshot.data!.where((String option) {
+                return option.toLowerCase().contains(textEditingValue.text.toLowerCase());
+              });
+            },
+            onSelected: (String selection) {
+              setState(() {
+                supplierName = selection;
+              });
+            },
+            fieldViewBuilder: (context, controller, focusNode, onEditingComplete) {
+              return TextField(
+                controller: controller,
+                focusNode: focusNode,
+                decoration: InputDecoration(
+                  labelText: "Nombre del Proveedor",
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(color: Colors.black),
+                  ),
+                ),
+                onChanged: (value) {
+                  setState(() {
+                    supplierName = value;
+                  });
+                },
+              );
+            },
+          );
+        } else if (snapshot.hasError) {
+          return const Text('Error al cargar los nombres de los proveedores.');
+        } else {
+          return const CircularProgressIndicator();
         }
-        return null;
       },
     );
   }
+
   Widget buildDniField() {
     return TextFormField(
       decoration: InputDecoration(
-        labelText: "DNI Proveedor",
+        labelText: "DNI proveedor",
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
           borderSide: const BorderSide(color: Colors.black),
         ),
       ),
       onSaved: (String? value) {
-        dni = value!;
+        dni = value ?? '';
       },
       validator: (String? value) {
         if (value!.isEmpty) {
@@ -138,7 +176,7 @@ class _PublicUserPageState extends State<PublicUserPage> {
   }
 
   Widget buildAnimalTypeField() {
-    return TextFormField(
+    return DropdownButtonFormField<String>(
       decoration: InputDecoration(
         labelText: "Tipo de Animal",
         border: OutlineInputBorder(
@@ -146,14 +184,66 @@ class _PublicUserPageState extends State<PublicUserPage> {
           borderSide: const BorderSide(color: Colors.black),
         ),
       ),
+      items: _animalTypes.map((String type) {
+        return DropdownMenuItem<String>(
+          value: type,
+          child: Text(type),
+        );
+      }).toList(),
+      onChanged: (String? newValue) {
+        if (newValue == 'Otros') {
+          _showOtherAnimalDialog();
+        } else {
+          setState(() {
+            specieAnimal = newValue!;
+          });
+        }
+      },
       onSaved: (String? value) {
         specieAnimal = value!;
       },
       validator: (String? value) {
-        if (value!.isEmpty) {
+        if (value == null || value.isEmpty) {
           return "Este campo es obligatorio";
         }
         return null;
+      },
+    );
+  }
+
+  void _showOtherAnimalDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        String otherAnimal = '';
+        return AlertDialog(
+          title: const Text('Especificar Tipo de Animal'),
+          content: TextField(
+            decoration: const InputDecoration(
+              labelText: 'Especificar otro tipo de animal',
+            ),
+            onChanged: (value) {
+              otherAnimal = value;
+            },
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: const Text('Cancelar'),
+            ),
+            TextButton(
+              onPressed: () {
+                setState(() {
+                  specieAnimal = otherAnimal;
+                });
+                Navigator.of(context).pop();
+              },
+              child: const Text('Aceptar'),
+            ),
+          ],
+        );
       },
     );
   }
@@ -168,7 +258,7 @@ class _PublicUserPageState extends State<PublicUserPage> {
         ),
       ),
       onSaved: (String? value) {
-        description = value! ;
+        description = value!;
       },
       validator: (String? value) {
         if (value!.isEmpty) {
@@ -196,28 +286,22 @@ class _PublicUserPageState extends State<PublicUserPage> {
 
   Future<void> crearRegistroAnimal() async {
     try {
-      User? user = _auth.currentUser;
-      if (user != null) {
-        await _firestore.collection('animal_records').add({
-          'userId': user.uid,
-          'supplierName': supplierName,
-          'dni': dni,
-          'specieAnimal': specieAnimal,
-          'description': description,
-          'status': 'pendiente',
-          'createdAt': FieldValue.serverTimestamp(),
-        });
-        setState(() {
-          feedbackMessage = "Registro enviado correctamente.";
-        });
-      } else {
-        setState(() {
-          feedbackMessage = "Error: Usuario no autenticado.";
-        });
-      }
+      await FirebaseFirestore.instance.collection('animal_records').add({
+        'supplierName': supplierName,
+        'dni': dni,
+        'specieAnimal': specieAnimal,
+        'description': description,
+        'status': 'pendiente',  // Cambiado a "pendiente"
+        'createdAt': FieldValue.serverTimestamp(),
+        'sentAt': FieldValue.serverTimestamp(),
+        'userEmail': FirebaseAuth.instance.currentUser?.email,
+      });
+      setState(() {
+        feedbackMessage = "Registro creado correctamente.";
+      });
     } catch (e) {
       setState(() {
-        feedbackMessage = "Error al enviar el registro: $e";
+        feedbackMessage = "Error al crear el registro: $e";
       });
     }
   }
@@ -231,133 +315,31 @@ class _PublicUserPageState extends State<PublicUserPage> {
     return StreamBuilder<QuerySnapshot>(
       stream: _firestore
           .collection('animal_records')
-          .where('userId', isEqualTo: user.uid)
+          .where('userEmail', isEqualTo: user.email)
           .snapshots(),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           return const Text("Error al cargar los registros.");
         }
-        if (snapshot.connectionState == ConnectionState.waiting) {
+        if (!snapshot.hasData) {
           return const CircularProgressIndicator();
         }
-        final records = snapshot.data?.docs ?? [];
+
+        final records = snapshot.data!.docs;
+
         return ListView.builder(
           shrinkWrap: true,
           itemCount: records.length,
           itemBuilder: (context, index) {
-            var record = records[index];
+            final record = records[index];
+            final data = record.data() as Map<String, dynamic>;
             return ListTile(
-              title: Text(record['supplierName']),
-              subtitle: Text(record['specieAnimal' ]),
-              trailing: record['status'] == 'pendiente'
-                  ? IconButton(
-                icon: const Icon(Icons.edit),
-                onPressed: () {
-                  showDialog(
-                    context: context,
-                    builder: (context) => EditAnimalRecordDialog(record: record),
-                  );
-                },
-              )
-                  : const Text('Aceptado'),
+              title: Text(data['specieAnimal']),
+              subtitle: Text('Proveedor: ${data['supplierName']}'),
             );
           },
         );
       },
     );
   }
-}
-
-class EditAnimalRecordDialog extends StatefulWidget {
-  final DocumentSnapshot record;
-
-  const EditAnimalRecordDialog({super.key, required this.record});
-
-  @override
-  _EditAnimalRecordDialogState createState() => _EditAnimalRecordDialogState();
-}
-
-class _EditAnimalRecordDialogState extends State<EditAnimalRecordDialog> {
-  final _formKey = GlobalKey<FormState>();
-  late String supplierName, specieAnimal;
-  late String description, dni;
-
-  @override
-  void initState() {
-    super.initState();
-    supplierName = widget.record['supplierName'];
-    dni = widget.record['dni'];
-    specieAnimal = widget.record['specieAnimal'];
-    description = widget.record['description'];
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Editar Registro de Animal'),
-      content: Form(
-        key: _formKey,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextFormField(
-              initialValue: supplierName,
-              decoration: const InputDecoration(labelText: 'Nombre del Proveedor'),
-              onSaved: (value) => supplierName = value!,
-              validator: (value) {
-                if (value!.isEmpty) {
-                  return "Este campo es obligatorio";
-                }
-                return null;
-              },
-            ),
-            TextFormField(
-              initialValue: specieAnimal,
-              decoration: const InputDecoration(labelText: 'Especie del Animal'),
-              onSaved: (value) => specieAnimal = value!,
-              validator: (value) {
-                if (value!.isEmpty) {
-                  return "Este campo es obligatorio";
-                }
-                return null;
-              },
-            ),
-            TextFormField(
-              initialValue: description,
-              decoration: const InputDecoration(labelText: 'Descripción'),
-              onSaved: (value) => description = value!,
-              validator: (value) {
-                if (value!.isEmpty) {
-                  return "Este campo es obligatorio";
-                }
-                return null;
-              },
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancelar'),
-        ),
-        ElevatedButton(
-          onPressed: () async {
-            if (_formKey.currentState!.validate()) {
-              _formKey.currentState!.save();
-              await widget.record.reference.update({
-                'supplierName': supplierName,
-                'dni':dni,
-                'specieAnimal': specieAnimal,
-                'description': description,
-              });
-              Navigator.of(context).pop();
-            }
-          },
-          child: const Text('Guardar'),
-        ),
-      ],
-    );
-  }
-
 }
